@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ブロック叩き課題</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      font-family: sans-serif;
+      background-color: #f5f5f5;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #setup-screen, #game-screen, #result-screen {
+      display: none;
+    }
+
+    #setup-screen.active, #game-screen.active, #result-screen.active {
+      display: block;
+    }
+
+    input[type="text"] {
+      padding: 15px;
+      font-size: 18px;
+      width: 80%;
+      max-width: 300px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      padding: 15px 30px;
+      font-size: 20px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    button:active {
+      background-color: #2980b9;
+      transform: translateY(2px);
+    }
+
+    #board {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+      height: 500px;
+      margin: 0 auto;
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+
+    .block {
+      position: absolute;
+      width: 18%;
+      height: 18%;
+      background-color: #2c3e50;
+      border-radius: 8px;
+      transition: background-color 0.1s;
+    }
+
+    .block.active {
+      background-color: #f1c40f;
+    }
+
+    #status-text {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      height: 30px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="setup-screen" class="active">
+    <h2>コルシブロックタッピングタスク</h2>
+
+    <p>あなたの被験者番号を入力してください</p>
+
+    <input
+      type="text"
+      id="student-id"
+      placeholder="例: 1D08 / 1E40 など"
+    >
+
+    <br>
+
+    <button onclick="startGame()">テストを開始する</button>
+  </div>
+
+
+  <div id="game-screen">
+
+    <div id="status-text">準備中...</div>
+
+    <div id="board"></div>
+
+  </div>
+
+
+  <div id="result-screen">
+
+    <h2>テスト終了！</h2>
+
+    <p
+      id="final-score"
+      style="font-size: 24px; font-weight: bold;"
+    ></p>
+
+    <p id="send-status">
+      先生のPCにデータを送信しています...
+    </p>
+
+  </div>
+
+
+  <script>
+
+    // =========================================================
+    // 設定
+    // =========================================================
+
+    const GAS_URL =
+      'https://script.google.com/macros/s/AKfycbxm073IXD1p-_AHqtF4_344pmqoVFBhHjvBJrscZ5PF_0ozutbvsaPKe9_MB8EdESwX/exec';
+
+
+    // =========================================================
+    // ブロックの配置
+    // =========================================================
+
+    const blockPositions = [
+
+      {x: 10, y: 10},
+      {x: 50, y: 5},
+      {x: 75, y: 25},
+      {x: 15, y: 40},
+      {x: 45, y: 45},
+      {x: 80, y: 60},
+      {x: 25, y: 75},
+      {x: 55, y: 80},
+      {x: 5,  y: 70}
+
+    ];
+
+
+    // =========================================================
+    // ゲーム変数
+    // =========================================================
+
+    let sequence = [];
+
+    let userStep = 0;
+
+    let currentSpan = 3;
+
+    let isUserTurn = false;
+
+    let startTime;
+
+    let studentId = "";
+
+    // 現在のレベルで何回ミスしたか
+    let mistakeCount = 0;
+
+
+    // =========================================================
+    // ブロック生成
+    // =========================================================
+
+    const board = document.getElementById('board');
+
+    const blocks = [];
+
+
+    blockPositions.forEach((pos, index) => {
+
+      const block = document.createElement('div');
+
+      block.className = 'block';
+
+      block.style.left = pos.x + '%';
+
+      block.style.top = pos.y + '%';
+
+
+      block.addEventListener(
+        'pointerdown',
+        () => handleBlockTap(index)
+      );
+
+
+      board.appendChild(block);
+
+      blocks.push(block);
+
+    });
+
+
+    // =========================================================
+    // ゲーム開始
+    // =========================================================
+
+    function startGame() {
+
+      studentId =
+        document.getElementById('student-id').value.trim();
+
+
+      if (!studentId) {
+
+        alert("出席番号を入力してください！");
+
+        return;
+
+      }
+
+
+      document
+        .getElementById('setup-screen')
+        .classList.remove('active');
+
+
+      document
+        .getElementById('game-screen')
+        .classList.add('active');
+
+
+      startTime = new Date();
+
+      currentSpan = 3;
+
+      // ゲーム開始時はミス0
+      mistakeCount = 0;
+
+
+      startLevel();
+
+    }
+
+
+    // =========================================================
+    // レベル開始
+    // =========================================================
+
+    function startLevel() {
+
+      sequence = [];
+
+      userStep = 0;
+
+      isUserTurn = false;
+
+
+      document.getElementById('status-text').innerText =
+        "順番を覚えてください...";
+
+
+      document.getElementById('status-text').style.color =
+        "#e74c3c";
+
+
+      // ★ここでは mistakeCount をリセットしない！
+      //
+      // 1回目のミス後に再挑戦するとき、
+      // mistakeCount = 1 の状態を維持する必要がある。
+
+
+      // 現在のスパン数だけランダムに選択
+      for (let i = 0; i < currentSpan; i++) {
+
+        sequence.push(
+          Math.floor(Math.random() * blocks.length)
+        );
+
+      }
+
+
+      setTimeout(playSequence, 1000);
+
+    }
+
+
+    // =========================================================
+    // 順番を表示
+    // =========================================================
+
+    function playSequence() {
+
+      let step = 0;
+
+
+      const interval = setInterval(() => {
+
+        if (step >= sequence.length) {
+
+          clearInterval(interval);
+
+          isUserTurn = true;
+
+
+          document.getElementById('status-text').innerText =
+            "同じ順番でタップしてください！";
+
+
+          document.getElementById('status-text').style.color =
+            "#27ae60";
+
+
+          return;
+
+        }
+
+
+        const blockIndex = sequence[step];
+
+
+        highlightBlock(blockIndex, 500);
+
+
+        step++;
+
+      }, 1000);
+
+    }
+
+
+    // =========================================================
+    // ブロックを光らせる
+    // =========================================================
+
+    function highlightBlock(index, duration) {
+
+      blocks[index].classList.add('active');
+
+
+      setTimeout(() => {
+
+        blocks[index].classList.remove('active');
+
+      }, duration);
+
+    }
+
+
+    // =========================================================
+    // ブロックをタップ
+    // =========================================================
+
+    function handleBlockTap(index) {
+
+      if (!isUserTurn) return;
+
+
+      highlightBlock(index, 200);
+
+
+      // =====================================================
+      // 正解
+      // =====================================================
+
+      if (index === sequence[userStep]) {
+
+        userStep++;
+
+
+        // -----------------------------------------------
+        // レベルを完全クリア
+        // -----------------------------------------------
+
+        if (userStep === sequence.length) {
+
+          isUserTurn = false;
+
+
+          // ★重要
+          // このレベルをクリアしたので、
+          // 次のレベルではミス回数を0にする
+          mistakeCount = 0;
+
+
+          // 次のレベルへ
+          currentSpan++;
+
+
+          document.getElementById('status-text').innerText =
+            "正解！次は " + currentSpan + " 個です。";
+
+
+          document.getElementById('status-text').style.color =
+            "#2980b9";
+
+
+          setTimeout(startLevel, 1500);
+
+        }
+
+      }
+
+
+      // =====================================================
+      // 不正解
+      // =====================================================
+
+      else {
+
+        // ミスを1回追加
+        mistakeCount++;
+
+
+        // -----------------------------------------------
+        // 1回目のミス
+        // -----------------------------------------------
+
+        if (mistakeCount === 1) {
+
+          isUserTurn = false;
+
+
+          document.getElementById('status-text').innerText =
+            "不正解！もう一度挑戦してください。";
+
+
+          document.getElementById('status-text').style.color =
+            "#e67e22";
+
+
+          // ★重要
+          // currentSpanは変更しない
+          // mistakeCountもリセットしない
+          //
+          // ここでは同じレベルをもう一度実施する
+
+          setTimeout(() => {
+
+            startLevel();
+
+          }, 1500);
+
+        }
+
+
+        // -----------------------------------------------
+        // 2回目のミス
+        // -----------------------------------------------
+
+        else if (mistakeCount >= 2) {
+
+          isUserTurn = false;
+
+
+          document.getElementById('status-text').innerText =
+            "2回間違えました。テスト終了です。";
+
+
+          document.getElementById('status-text').style.color =
+            "#e74c3c";
+
+
+          setTimeout(() => {
+
+            endGame();
+
+          }, 1000);
+
+        }
+
+      }
+
+    }
+
+
+    // =========================================================
+    // ゲーム終了
+    // =========================================================
+
+    function endGame() {
+
+      const endTime = new Date();
+
+
+      const timeTaken =
+        Math.round(
+          (endTime - startTime) / 1000
+        );
+
+
+      // 2回ミスしたレベルは未達成なので、
+      // 直前にクリアしたスパンをスコアとする
+      const finalScore = currentSpan - 1;
+
+
+      document
+        .getElementById('game-screen')
+        .classList.remove('active');
+
+
+      document
+        .getElementById('result-screen')
+        .classList.add('active');
+
+
+      document.getElementById('final-score').innerText =
+        `あなたの記録: ${finalScore} 個`;
+
+
+      const results = {
+
+        studentId: studentId,
+
+        score: finalScore,
+
+        time: timeTaken
+
+      };
+
+
+      // =====================================================
+      // GASへデータ送信
+      // =====================================================
+
+      fetch(GAS_URL, {
+
+        method: 'POST',
+
+        mode: 'no-cors',
+
+        headers: {
+
+          'Content-Type': 'text/plain'
+
+        },
+
+        body: JSON.stringify(results)
+
+      })
+
+      .then(() => {
+
+        document.getElementById('send-status').innerText =
+          "✅ データが送信されました！先生の指示を待ってください。";
+
+
+        document.getElementById('send-status').style.color =
+          "#27ae60";
+
+      })
+
+      .catch((error) => {
+
+        document.getElementById('send-status').innerText =
+          "❌ エラー: データの送信に失敗しました。";
+
+
+        console.error(error);
+
+      });
+
+    }
+
+  </script>
+
+</body>
+</html>
